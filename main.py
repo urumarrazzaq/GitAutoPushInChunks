@@ -29,7 +29,7 @@ def count_files(folder):
     return total_files
 
 # ============================= #
-# 🔄 Log Message Function (Symbol Color Only) #
+# 🔄 Log Message Function #
 # ============================= #
 def log_message(message, symbol_color="black"):
     """
@@ -42,43 +42,43 @@ def log_message(message, symbol_color="black"):
     log_text.tag_config("yellow", foreground="orange")
     log_text.tag_config("blue", foreground="blue")
 
-    # Extract the first character (symbol) and the rest of the message
-    symbol = message[:2]  # First two characters (e.g., "✅ ", "❌ ", "⚠️ ")
-    rest_of_text = message[2:]  # Everything after the first two characters
+    symbol = message[:2]  
+    rest_of_text = message[2:]  
 
-    # Insert the symbol with color
     log_text.insert(tk.END, symbol, symbol_color)
-    # Insert the rest of the text in black
     log_text.insert(tk.END, rest_of_text + "\n", "black")
 
     log_text.yview(tk.END)
     root.update()
 
 # ============================= #
-# 🗑 Remove Selected Ignored Folder #
+# 🛑 Stop Push Process #
 # ============================= #
-def remove_selected_folder():
-    selected_items = ignored_listbox.curselection()
-    if not selected_items:
-        messagebox.showwarning("No Selection", "Please select a folder to remove from the ignored list.")
-        return
+stop_push = False  # Global flag to stop push process
 
-    for index in reversed(selected_items):
-        ignored_listbox.delete(index)
+def stop_push_process():
+    global stop_push
+    stop_push = True
+    log_message("❌ Stopping push process...", "red")
 
 # ============================= #
-# 📂 Select Folders to Ignore    #
+# 📜 Copy Logs Function #
 # ============================= #
-def select_ignored_folders():
-    selected_folder = filedialog.askdirectory(mustexist=True)
-    if selected_folder:
-        ignored_listbox.insert(tk.END, selected_folder)
+def copy_logs():
+    root.clipboard_clear()
+    root.clipboard_append(log_text.get("1.0", tk.END))
+    root.update()
+    messagebox.showinfo("Copied", "Logs copied to clipboard!")
 
 # ============================= #
 # 🚀 Push function (UI Integrated) #
 # ============================= #
 def push_project_in_chunks():
-    start_button.config(state=tk.DISABLED)  # Disable button while running
+    global stop_push
+    stop_push = False  # Reset flag at start
+    start_button.config(state=tk.DISABLED)  
+    stop_button.config(state=tk.NORMAL)  # Enable stop button
+
     repo_path = folder_path.get()
     repo_url = repo_url_entry.get()
     chunk_size_mb = int(chunk_size_entry.get())
@@ -86,23 +86,24 @@ def push_project_in_chunks():
     if not repo_path or not repo_url:
         messagebox.showerror("Error", "Please select a project folder and enter a GitHub repository URL.")
         start_button.config(state=tk.NORMAL)
+        stop_button.config(state=tk.DISABLED)
         return
 
-    log_text.delete("1.0", tk.END)  # Clear log
+    log_text.delete("1.0", tk.END)  
 
-    # ✅ Ensure Git is not locked
     subprocess.run(["git", "rm", "-f", ".git/index.lock"], cwd=repo_path, check=False)
 
-    # 📝 Get Ignored Folders
     ignored_folders_list = [ignored_listbox.get(i) for i in range(ignored_listbox.size())]
 
-    # 🔄 Initialize Git Repo if not exists
     if not os.path.exists(os.path.join(repo_path, ".git")):
         subprocess.run(["git", "init"], cwd=repo_path)
         subprocess.run(["git", "remote", "add", "origin", repo_url], cwd=repo_path)
 
-    # 🚀 Push Files in Chunks
     for dirpath, _, filenames in os.walk(repo_path):
+        if stop_push:
+            log_message("\n❌ Push process stopped!", "red")
+            break
+
         if ".git" in dirpath or any(dirpath.startswith(folder) for folder in ignored_folders_list):
             log_message(f"⚠️ Skipping: {dirpath}", "yellow")
             continue
@@ -113,9 +114,12 @@ def push_project_in_chunks():
             continue
 
         for file in filenames:
+            if stop_push:
+                log_message("\n❌ Push process stopped!", "red")
+                break
+
             file_path = os.path.join(dirpath, file)
             try:
-                # ✅ Convert Windows paths to proper Git paths
                 commit_msg = f"Added {file} from {dirpath.replace(repo_path, '').replace('\\', '/')}"
                 
                 subprocess.run(["git", "add", file_path], cwd=repo_path, check=True)
@@ -127,18 +131,20 @@ def push_project_in_chunks():
             except subprocess.CalledProcessError as e:
                 log_message(f"❌ Failed: {file_path} - {str(e)}", "red")
 
-    log_message("\n✅ Push Process Completed!", "blue")
-    start_button.config(state=tk.NORMAL)  # Re-enable button
+    if not stop_push:
+        log_message("\n✅ Push Process Completed!", "blue")
+
+    start_button.config(state=tk.NORMAL)
+    stop_button.config(state=tk.DISABLED)
 
 # ============================= #
-# 🎨 UI Setup                    #
+# 🎨 UI Setup #
 # ============================= #
 root = tk.Tk()
 root.title("Git Auto Push In Chunks")
 root.geometry("800x600")
 root.resizable(True, True)
 
-# Responsive Grid Layout
 root.columnconfigure(1, weight=1)
 root.rowconfigure(5, weight=1)
 
@@ -165,18 +171,21 @@ tk.Label(root, text="Ignored Folders:").grid(row=3, column=0, sticky="w", padx=1
 ignored_listbox = tk.Listbox(root, height=5, selectmode=tk.MULTIPLE)
 ignored_listbox.grid(row=3, column=1, sticky="ew", padx=5, pady=5)
 
-btn_frame = tk.Frame(root)
-btn_frame.grid(row=3, column=2, sticky="w", padx=5, pady=5)
-tk.Button(btn_frame, text="Add", command=select_ignored_folders).pack(side=tk.TOP, fill="x", pady=2)
-tk.Button(btn_frame, text="Remove", command=remove_selected_folder).pack(side=tk.TOP, fill="x", pady=2)
+# 🚀 Buttons
+button_frame = tk.Frame(root)
+button_frame.grid(row=4, column=1, pady=10)
 
-# 🚀 Start Push Button
-start_button = tk.Button(root, text="Start Push", command=push_project_in_chunks, bg="green", fg="white", font=("Arial", 12, "bold"))
-start_button.grid(row=4, column=1, pady=10)
+start_button = tk.Button(button_frame, text="Start Push", command=push_project_in_chunks, bg="green", fg="white", font=("Arial", 12, "bold"))
+start_button.pack(side=tk.LEFT, padx=5)
 
-# 📜 Log Area (Scrollable)
+stop_button = tk.Button(button_frame, text="Stop Push", command=stop_push_process, bg="red", fg="white", font=("Arial", 12, "bold"), state=tk.DISABLED)
+stop_button.pack(side=tk.LEFT, padx=5)
+
+copy_button = tk.Button(button_frame, text="Copy Logs", command=copy_logs)
+copy_button.pack(side=tk.LEFT, padx=5)
+
+# 📜 Log Area
 log_text = scrolledtext.ScrolledText(root, width=90, height=20)
 log_text.grid(row=5, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
 
-# 🏁 Run UI
 root.mainloop()
