@@ -23,7 +23,7 @@ cd GitChunkPusher
 ```
 ### **Step 2:** Install dependencies
 ```bash
-pip install gitpython colorama
+pip install gitpython
 ```
 ### ***Step 3:*** Run the script
 ```bash
