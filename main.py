@@ -29,11 +29,28 @@ def count_files(folder):
     return total_files
 
 # ============================= #
-# 🔄 Log Message Function (Color) #
+# 🔄 Log Message Function (Symbol Color Only) #
 # ============================= #
-def log_message(message, color="black"):
-    log_text.tag_config(color, foreground=color)
-    log_text.insert(tk.END, message + "\n", color)
+def log_message(message, symbol_color="black"):
+    """
+    Logs messages with only the first symbol colored.
+    The rest of the text remains default black.
+    """
+    log_text.tag_config("black", foreground="black")
+    log_text.tag_config("green", foreground="green")
+    log_text.tag_config("red", foreground="red")
+    log_text.tag_config("yellow", foreground="orange")
+    log_text.tag_config("blue", foreground="blue")
+
+    # Extract the first character (symbol) and the rest of the message
+    symbol = message[:2]  # First two characters (e.g., "✅ ", "❌ ", "⚠️ ")
+    rest_of_text = message[2:]  # Everything after the first two characters
+
+    # Insert the symbol with color
+    log_text.insert(tk.END, symbol, symbol_color)
+    # Insert the rest of the text in black
+    log_text.insert(tk.END, rest_of_text + "\n", "black")
+
     log_text.yview(tk.END)
     root.update()
 
@@ -53,9 +70,9 @@ def remove_selected_folder():
 # 📂 Select Folders to Ignore    #
 # ============================= #
 def select_ignored_folders():
-    selected_folders = filedialog.askdirectory(mustexist=True)
-    if selected_folders:
-        ignored_listbox.insert(tk.END, selected_folders)
+    selected_folder = filedialog.askdirectory(mustexist=True)
+    if selected_folder:
+        ignored_listbox.insert(tk.END, selected_folder)
 
 # ============================= #
 # 🚀 Push function (UI Integrated) #
@@ -72,6 +89,9 @@ def push_project_in_chunks():
         return
 
     log_text.delete("1.0", tk.END)  # Clear log
+
+    # ✅ Ensure Git is not locked
+    subprocess.run(["git", "rm", "-f", ".git/index.lock"], cwd=repo_path, check=False)
 
     # 📝 Get Ignored Folders
     ignored_folders_list = [ignored_listbox.get(i) for i in range(ignored_listbox.size())]
@@ -95,8 +115,10 @@ def push_project_in_chunks():
         for file in filenames:
             file_path = os.path.join(dirpath, file)
             try:
+                # ✅ Convert Windows paths to proper Git paths
+                commit_msg = f"Added {file} from {dirpath.replace(repo_path, '').replace('\\', '/')}"
+                
                 subprocess.run(["git", "add", file_path], cwd=repo_path, check=True)
-                commit_msg = f"Added {file} from {dirpath.replace(repo_path, '')}"
                 subprocess.run(["git", "commit", "-m", commit_msg], cwd=repo_path, check=True)
                 subprocess.run(["git", "push", "origin", "main"], cwd=repo_path, check=True)
 
