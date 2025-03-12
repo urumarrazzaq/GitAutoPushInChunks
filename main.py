@@ -1,7 +1,7 @@
 import os
 import subprocess
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import filedialog, messagebox, scrolledtext
 
 # ============================= #
 # 🚀 Function to get folder size #
@@ -9,7 +9,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 def get_folder_size(folder):
     total_size = 0
     for dirpath, _, filenames in os.walk(folder):
-        if ".git" in dirpath:  # Ignore .git folder
+        if ".git" in dirpath:  
             continue
         for file in filenames:
             filepath = os.path.join(dirpath, file)
@@ -18,43 +18,27 @@ def get_folder_size(folder):
     return total_size
 
 # ============================= #
-# 🗂️ Function to count files      #
-# ============================= #
-def count_files(folder):
-    total_files = 0
-    for dirpath, _, files in os.walk(folder):
-        if ".git" in dirpath:  # Ignore .git folder
-            continue
-        total_files += len(files)
-    return total_files
-
-# ============================= #
 # 🔄 Log Message Function #
 # ============================= #
-def log_message(message, symbol_color="black"):
-    """
-    Logs messages with only the first symbol colored.
-    The rest of the text remains default black.
-    """
+def log_message(message, color="black"):
     log_text.tag_config("black", foreground="black")
     log_text.tag_config("green", foreground="green")
     log_text.tag_config("red", foreground="red")
     log_text.tag_config("yellow", foreground="orange")
     log_text.tag_config("blue", foreground="blue")
 
-    symbol = message[:2]  
-    rest_of_text = message[2:]  
+    symbol = message[:2]  # First two characters
+    rest_of_text = message[2:]  # Everything after the first two characters
 
-    log_text.insert(tk.END, symbol, symbol_color)
+    log_text.insert(tk.END, symbol, color)
     log_text.insert(tk.END, rest_of_text + "\n", "black")
-
     log_text.yview(tk.END)
     root.update()
 
 # ============================= #
 # 🛑 Stop Push Process #
 # ============================= #
-stop_push = False  # Global flag to stop push process
+stop_push = False
 
 def stop_push_process():
     global stop_push
@@ -71,13 +55,36 @@ def copy_logs():
     messagebox.showinfo("Copied", "Logs copied to clipboard!")
 
 # ============================= #
-# 🚀 Push function (UI Integrated) #
+# ➕ Add Folder to Ignore List #
+# ============================= #
+def add_folder_to_ignore():
+    folder = filedialog.askdirectory()
+    if folder and folder not in ignored_listbox.get(0, tk.END):
+        ignored_listbox.insert(tk.END, folder)
+
+# ============================= #
+# ❌ Remove Selected Folder (With Confirmation) #
+# ============================= #
+def remove_selected_folder():
+    selected_indices = ignored_listbox.curselection()
+    
+    if not selected_indices:
+        messagebox.showwarning("No Selection", "Please select a folder to remove.")
+        return
+
+    confirmation = messagebox.askyesno("Confirm Removal", "Are you sure you want to remove the selected folder(s) from the ignore list?")
+    if confirmation:
+        for index in reversed(selected_indices):
+            ignored_listbox.delete(index)
+
+# ============================= #
+# 🚀 Push function (Updated) #
 # ============================= #
 def push_project_in_chunks():
     global stop_push
-    stop_push = False  # Reset flag at start
+    stop_push = False  
     start_button.config(state=tk.DISABLED)  
-    stop_button.config(state=tk.NORMAL)  # Enable stop button
+    stop_button.config(state=tk.NORMAL)  
 
     repo_path = folder_path.get()
     repo_url = repo_url_entry.get()
@@ -109,9 +116,9 @@ def push_project_in_chunks():
             continue
 
         folder_size_mb = get_folder_size(dirpath) / (1024 * 1024)
+
         if folder_size_mb > chunk_size_mb:
-            log_message(f"⚠️ Skipping large folder: {dirpath} ({folder_size_mb:.2f} MB)", "yellow")
-            continue
+            log_message(f"🔍 Large Folder Detected: {dirpath} ({folder_size_mb:.2f} MB) - Checking Subfolders", "blue")
 
         for file in filenames:
             if stop_push:
@@ -119,9 +126,15 @@ def push_project_in_chunks():
                 break
 
             file_path = os.path.join(dirpath, file)
+            file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+
+            if file_size_mb > chunk_size_mb:
+                log_message(f"⚠️ Skipping Large File: {file} ({file_size_mb:.2f} MB)", "yellow")
+                continue
+
             try:
                 commit_msg = f"Added {file} from {dirpath.replace(repo_path, '').replace('\\', '/')}"
-                
+
                 subprocess.run(["git", "add", file_path], cwd=repo_path, check=True)
                 subprocess.run(["git", "commit", "-m", commit_msg], cwd=repo_path, check=True)
                 subprocess.run(["git", "push", "origin", "main"], cwd=repo_path, check=True)
@@ -171,20 +184,23 @@ tk.Label(root, text="Ignored Folders:").grid(row=3, column=0, sticky="w", padx=1
 ignored_listbox = tk.Listbox(root, height=5, selectmode=tk.MULTIPLE)
 ignored_listbox.grid(row=3, column=1, sticky="ew", padx=5, pady=5)
 
-# 🚀 Buttons
+ignore_button_frame = tk.Frame(root)
+ignore_button_frame.grid(row=3, column=2, padx=5, pady=5, sticky="w")
+tk.Button(ignore_button_frame, text="➕ Add", command=add_folder_to_ignore).pack(side=tk.TOP, padx=2, pady=2)
+tk.Button(ignore_button_frame, text="❌ Remove", command=remove_selected_folder).pack(side=tk.TOP, padx=2, pady=2)
+
+# 🚀 Buttons Frame (Centered)
 button_frame = tk.Frame(root)
-button_frame.grid(row=4, column=1, pady=10)
+button_frame.grid(row=4, column=0, columnspan=3, pady=10)
 
-start_button = tk.Button(button_frame, text="Start Push", command=push_project_in_chunks, bg="green", fg="white", font=("Arial", 12, "bold"))
-start_button.pack(side=tk.LEFT, padx=5)
+start_button = tk.Button(button_frame, text="🚀 Start", command=push_project_in_chunks, width=12, bg="green", fg="white" , disabledforeground="#555555")
+stop_button = tk.Button(button_frame, text="🛑 Stop", command=stop_push_process, state=tk.DISABLED, width=12, bg="red", fg="white", disabledforeground="#555555")
+copy_logs_button = tk.Button(button_frame, text="📋 Copy Logs", command=copy_logs, width=12, bg="blue", fg="white")
 
-stop_button = tk.Button(button_frame, text="Stop Push", command=stop_push_process, bg="red", fg="white", font=("Arial", 12, "bold"), state=tk.DISABLED)
-stop_button.pack(side=tk.LEFT, padx=5)
+start_button.pack(side=tk.LEFT, padx=10)
+stop_button.pack(side=tk.LEFT, padx=10)
+copy_logs_button.pack(side=tk.LEFT, padx=10)
 
-copy_button = tk.Button(button_frame, text="Copy Logs", command=copy_logs)
-copy_button.pack(side=tk.LEFT, padx=5)
-
-# 📜 Log Area
 log_text = scrolledtext.ScrolledText(root, width=90, height=20)
 log_text.grid(row=5, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
 
