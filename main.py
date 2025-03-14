@@ -80,6 +80,42 @@ def remove_selected_folder():
 # ============================= #
 # 🚀 Push function (Updated) #
 # ============================= #
+def push_folder(folder_path, repo_path, chunk_size_mb):
+    global stop_push
+    if stop_push:
+        return
+
+    folder_size_mb = get_folder_size(folder_path) / (1024 * 1024)
+
+    if folder_size_mb > chunk_size_mb:
+        log_message(f"🔍 Large Folder Detected: {folder_path} ({folder_size_mb:.2f} MB) - Checking Subfolders", "blue")
+        for item in os.listdir(folder_path):
+            item_path = os.path.join(folder_path, item)
+            if os.path.isdir(item_path):
+                push_folder(item_path, repo_path, chunk_size_mb)
+            elif os.path.isfile(item_path):
+                file_size_mb = os.path.getsize(item_path) / (1024 * 1024)
+                if file_size_mb > chunk_size_mb:
+                    log_message(f"⚠️ Skipping Large File: {item_path} ({file_size_mb:.2f} MB)", "yellow")
+                else:
+                    try:
+                        commit_msg = f"Added {item} from {folder_path.replace(repo_path, '').replace('\\', '/')}"
+                        subprocess.run(["git", "add", item_path], cwd=repo_path, check=True)
+                        subprocess.run(["git", "commit", "-m", commit_msg], cwd=repo_path, check=True)
+                        subprocess.run(["git", "push", "origin", "main"], cwd=repo_path, check=True)
+                        log_message(f"✅ Pushed: {item_path}", "green")
+                    except subprocess.CalledProcessError as e:
+                        log_message(f"❌ Failed: {item_path} - {str(e)}", "red")
+    else:
+        try:
+            commit_msg = f"Added folder {folder_path.replace(repo_path, '').replace('\\', '/')}"
+            subprocess.run(["git", "add", folder_path], cwd=repo_path, check=True)
+            subprocess.run(["git", "commit", "-m", commit_msg], cwd=repo_path, check=True)
+            subprocess.run(["git", "push", "origin", "main"], cwd=repo_path, check=True)
+            log_message(f"✅ Pushed Folder: {folder_path}", "green")
+        except subprocess.CalledProcessError as e:
+            log_message(f"❌ Failed: {folder_path} - {str(e)}", "red")
+
 def push_project_in_chunks():
     global stop_push
     stop_push = False  
@@ -106,7 +142,7 @@ def push_project_in_chunks():
         subprocess.run(["git", "init"], cwd=repo_path)
         subprocess.run(["git", "remote", "add", "origin", repo_url], cwd=repo_path)
 
-    for dirpath, _, filenames in os.walk(repo_path):
+    for dirpath, _, _ in os.walk(repo_path):
         if stop_push:
             log_message("\n❌ Push process stopped!", "red")
             break
@@ -115,34 +151,7 @@ def push_project_in_chunks():
             log_message(f"⚠️ Skipping: {dirpath}", "yellow")
             continue
 
-        folder_size_mb = get_folder_size(dirpath) / (1024 * 1024)
-
-        if folder_size_mb > chunk_size_mb:
-            log_message(f"🔍 Large Folder Detected: {dirpath} ({folder_size_mb:.2f} MB) - Checking Subfolders", "blue")
-
-        for file in filenames:
-            if stop_push:
-                log_message("\n❌ Push process stopped!", "red")
-                break
-
-            file_path = os.path.join(dirpath, file)
-            file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-
-            if file_size_mb > chunk_size_mb:
-                log_message(f"⚠️ Skipping Large File: {file} ({file_size_mb:.2f} MB)", "yellow")
-                continue
-
-            try:
-                commit_msg = f"Added {file} from {dirpath.replace(repo_path, '').replace('\\', '/')}"
-
-                subprocess.run(["git", "add", file_path], cwd=repo_path, check=True)
-                subprocess.run(["git", "commit", "-m", commit_msg], cwd=repo_path, check=True)
-                subprocess.run(["git", "push", "origin", "main"], cwd=repo_path, check=True)
-
-                log_message(f"✅ Pushed: {file_path}", "green")
-
-            except subprocess.CalledProcessError as e:
-                log_message(f"❌ Failed: {file_path} - {str(e)}", "red")
+        push_folder(dirpath, repo_path, chunk_size_mb)
 
     if not stop_push:
         log_message("\n✅ Push Process Completed!", "blue")
