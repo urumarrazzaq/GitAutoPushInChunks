@@ -44,6 +44,7 @@ def stop_push_process():
     global stop_push
     stop_push = True
     log_message("❌ Stopping push process...", "red")
+    save_skipped_files_log()  # Save skipped files log when process is stopped
 
 # ============================= #
 # 📜 Copy Logs Function #
@@ -76,6 +77,24 @@ def remove_selected_folder():
     if confirmation:
         for index in reversed(selected_indices):
             ignored_listbox.delete(index)
+
+# ============================= #
+# 📝 Save Skipped Files Log #
+# ============================= #
+def save_skipped_files_log():
+    skipped_files = [log_text.get(idx, idx + " lineend") for idx in log_text.tag_ranges("yellow")]
+    if skipped_files:
+        with open("Larger_Files_That_Skipped.log", "w") as log_file:
+            log_file.write("Skipped Large Files:\n")
+            log_file.write("\n".join(skipped_files))
+        log_message("📝 Skipped files log saved: Larger_Files_That_Skipped.log", "blue")
+
+# ============================= #
+# 🧹 Clear Logs Function #
+# ============================= #
+def clear_logs():
+    log_text.delete("1.0", tk.END)
+    log_message("🧹 Logs cleared!", "blue")
 
 # ============================= #
 # 🚀 Push function (Updated) #
@@ -145,6 +164,7 @@ def push_project_in_chunks():
     for dirpath, _, _ in os.walk(repo_path):
         if stop_push:
             log_message("\n❌ Push process stopped!", "red")
+            save_skipped_files_log()  # Save skipped files log when process is stopped
             break
 
         if ".git" in dirpath or any(dirpath.startswith(folder) for folder in ignored_folders_list):
@@ -155,6 +175,7 @@ def push_project_in_chunks():
 
     if not stop_push:
         log_message("\n✅ Push Process Completed!", "blue")
+        save_skipped_files_log()  # Save skipped files log when process is completed
 
     start_button.config(state=tk.NORMAL)
     stop_button.config(state=tk.DISABLED)
@@ -205,10 +226,12 @@ button_frame.grid(row=4, column=0, columnspan=3, pady=10)
 start_button = tk.Button(button_frame, text="🚀 Start", command=push_project_in_chunks, width=12, bg="green", fg="white" , disabledforeground="#555555")
 stop_button = tk.Button(button_frame, text="🛑 Stop", command=stop_push_process, state=tk.DISABLED, width=12, bg="red", fg="white", disabledforeground="#555555")
 copy_logs_button = tk.Button(button_frame, text="📋 Copy Logs", command=copy_logs, width=12, bg="blue", fg="white")
+clear_logs_button = tk.Button(button_frame, text="🧹 Clear Logs", command=clear_logs, width=12, bg="orange", fg="white")
 
 start_button.pack(side=tk.LEFT, padx=10)
 stop_button.pack(side=tk.LEFT, padx=10)
 copy_logs_button.pack(side=tk.LEFT, padx=10)
+clear_logs_button.pack(side=tk.LEFT, padx=10)
 
 log_text = scrolledtext.ScrolledText(root, width=90, height=20)
 log_text.grid(row=5, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
