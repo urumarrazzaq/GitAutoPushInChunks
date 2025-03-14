@@ -1,7 +1,8 @@
 import os
 import subprocess
+import time
 import tkinter as tk
-from tkinter import filedialog, messagebox, scrolledtext
+from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 # ============================= #
 # 🚀 Function to get folder size #
@@ -97,10 +98,49 @@ def clear_logs():
     log_message("🧹 Logs cleared!", "blue")
 
 # ============================= #
+# 🔄 Retry Failed Pushes #
+# ============================= #
+failed_pushes = []
+
+def retry_failed_pushes():
+    global stop_push
+    if not failed_pushes:
+        messagebox.showinfo("No Failed Pushes", "No failed pushes to retry.")
+        return
+
+    stop_push = False
+    start_button.config(state=tk.DISABLED)
+    stop_button.config(state=tk.NORMAL)
+    retry_button.config(state=tk.DISABLED)
+
+    log_message("🔄 Retrying failed pushes...", "blue")
+
+    for item in failed_pushes[:]:  # Iterate over a copy of the list
+        if stop_push:
+            break
+
+        try:
+            commit_msg = f"Added {item['name']} from {item['path'].replace(repo_path, '').replace('\\', '/')}"
+            subprocess.run(["git", "add", item["path"]], cwd=repo_path, check=True)
+            subprocess.run(["git", "commit", "-m", commit_msg], cwd=repo_path, check=True)
+            subprocess.run(["git", "push", "origin", "main"], cwd=repo_path, check=True)
+            log_message(f"✅ Pushed: {item['path']}", "green")
+            failed_pushes.remove(item)  # Remove successfully pushed item
+        except subprocess.CalledProcessError as e:
+            log_message(f"❌ Failed: {item['path']} - {str(e)}", "red")
+
+    if not stop_push:
+        log_message("\n✅ Retry process completed!", "blue")
+
+    start_button.config(state=tk.NORMAL)
+    stop_button.config(state=tk.DISABLED)
+    retry_button.config(state=tk.NORMAL if failed_pushes else tk.DISABLED)
+
+# ============================= #
 # 🚀 Push function (Updated) #
 # ============================= #
 def push_folder(folder_path, repo_path, chunk_size_mb):
-    global stop_push
+    global stop_push, failed_pushes
     if stop_push:
         return
 
@@ -125,6 +165,7 @@ def push_folder(folder_path, repo_path, chunk_size_mb):
                         log_message(f"✅ Pushed: {item_path}", "green")
                     except subprocess.CalledProcessError as e:
                         log_message(f"❌ Failed: {item_path} - {str(e)}", "red")
+                        failed_pushes.append({"name": item, "path": item_path})  # Add to failed pushes list
     else:
         try:
             commit_msg = f"Added folder {folder_path.replace(repo_path, '').replace('\\', '/')}"
@@ -134,12 +175,14 @@ def push_folder(folder_path, repo_path, chunk_size_mb):
             log_message(f"✅ Pushed Folder: {folder_path}", "green")
         except subprocess.CalledProcessError as e:
             log_message(f"❌ Failed: {folder_path} - {str(e)}", "red")
+            failed_pushes.append({"name": os.path.basename(folder_path), "path": folder_path})  # Add to failed pushes list
 
 def push_project_in_chunks():
-    global stop_push
+    global stop_push, repo_path, failed_pushes
     stop_push = False  
     start_button.config(state=tk.DISABLED)  
     stop_button.config(state=tk.NORMAL)  
+    retry_button.config(state=tk.DISABLED)
 
     repo_path = folder_path.get()
     repo_url = repo_url_entry.get()
@@ -152,6 +195,7 @@ def push_project_in_chunks():
         return
 
     log_text.delete("1.0", tk.END)  
+    failed_pushes.clear()  # Clear failed pushes list
 
     subprocess.run(["git", "rm", "-f", ".git/index.lock"], cwd=repo_path, check=False)
 
@@ -161,7 +205,19 @@ def push_project_in_chunks():
         subprocess.run(["git", "init"], cwd=repo_path)
         subprocess.run(["git", "remote", "add", "origin", repo_url], cwd=repo_path)
 
-    for dirpath, _, _ in os.walk(repo_path):
+    # Calculate total files/folders to process
+    total_items = 0
+    for dirpath, _, filenames in os.walk(repo_path):
+        if ".git" in dirpath or any(dirpath.startswith(folder) for folder in ignored_folders_list):
+            continue
+        total_items += len(filenames)
+
+    progress_bar["maximum"] = total_items
+    progress_bar["value"] = 0
+
+    start_time = time.time()
+
+    for dirpath, _, filenames in os.walk(repo_path):
         if stop_push:
             log_message("\n❌ Push process stopped!", "red")
             save_skipped_files_log()  # Save skipped files log when process is stopped
@@ -172,6 +228,16 @@ def push_project_in_chunks():
             continue
 
         push_folder(dirpath, repo_path, chunk_size_mb)
+        progress_bar["value"] += len(filenames)
+        root.update()
+
+        # Calculate estimated time remaining
+        elapsed_time = time.time() - start_time
+        items_processed = progress_bar["value"]
+        if items_processed > 0:
+            estimated_total_time = (elapsed_time / items_processed) * total_items
+            estimated_time_remaining = estimated_total_time - elapsed_time
+            log_message(f"⏳ Estimated time remaining: {int(estimated_time_remaining // 60)}m {int(estimated_time_remaining % 60)}s", "blue")
 
     if not stop_push:
         log_message("\n✅ Push Process Completed!", "blue")
@@ -179,6 +245,7 @@ def push_project_in_chunks():
 
     start_button.config(state=tk.NORMAL)
     stop_button.config(state=tk.DISABLED)
+    retry_button.config(state=tk.NORMAL if failed_pushes else tk.DISABLED)
 
 # ============================= #
 # 🎨 UI Setup #
@@ -189,7 +256,7 @@ root.geometry("800x600")
 root.resizable(True, True)
 
 root.columnconfigure(1, weight=1)
-root.rowconfigure(5, weight=1)
+root.rowconfigure(6, weight=1)
 
 # 📁 Project Folder Selection
 tk.Label(root, text="Project Folder:").grid(row=0, column=0, sticky="w", padx=10, pady=5)
@@ -225,15 +292,21 @@ button_frame.grid(row=4, column=0, columnspan=3, pady=10)
 
 start_button = tk.Button(button_frame, text="🚀 Start", command=push_project_in_chunks, width=12, bg="green", fg="white" , disabledforeground="#555555")
 stop_button = tk.Button(button_frame, text="🛑 Stop", command=stop_push_process, state=tk.DISABLED, width=12, bg="red", fg="white", disabledforeground="#555555")
+retry_button = tk.Button(button_frame, text="🔄 Retry Failed", command=retry_failed_pushes, state=tk.DISABLED, width=12, bg="purple", fg="white", disabledforeground="#555555")
 copy_logs_button = tk.Button(button_frame, text="📋 Copy Logs", command=copy_logs, width=12, bg="blue", fg="white")
 clear_logs_button = tk.Button(button_frame, text="🧹 Clear Logs", command=clear_logs, width=12, bg="orange", fg="white")
 
 start_button.pack(side=tk.LEFT, padx=10)
 stop_button.pack(side=tk.LEFT, padx=10)
+retry_button.pack(side=tk.LEFT, padx=10)
 copy_logs_button.pack(side=tk.LEFT, padx=10)
 clear_logs_button.pack(side=tk.LEFT, padx=10)
 
+# 📊 Progress Bar
+progress_bar = ttk.Progressbar(root, orient="horizontal", mode="determinate")
+progress_bar.grid(row=5, column=0, columnspan=3, sticky="ew", padx=10, pady=5)
+
 log_text = scrolledtext.ScrolledText(root, width=90, height=20)
-log_text.grid(row=5, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
+log_text.grid(row=6, column=0, columnspan=3, sticky="nsew", padx=10, pady=5)
 
 root.mainloop()
